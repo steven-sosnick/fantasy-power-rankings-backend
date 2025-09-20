@@ -1,0 +1,9 @@
+name: Weekly Refresh
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # 4AM EST = 8AM UTC
+jobs:
+  call-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -X POST https://your-render-service.onrender.com/refresh
