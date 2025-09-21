@@ -18,15 +18,9 @@ YAHOO_CLIENT_SECRET = os.getenv("YAHOO_CLIENT_SECRET")
 YAHOO_REFRESH_TOKEN = os.getenv("YAHOO_REFRESH_TOKEN")
 YAHOO_LEAGUE_KEY = f"nfl.l.{os.getenv('YAHOO_LEAGUE_ID')}"
 # Debug: confirm they are loaded
-print("CLIENT_ID:", YAHOO_CLIENT_ID)
-print("REFRESH_TOKEN:", YAHOO_REFRESH_TOKEN)
-print("LEAGUE_KEY:", YAHOO_LEAGUE_KEY)
 
 
 def refresh_access_token():
-    print("CLIENT_ID:", YAHOO_CLIENT_ID)
-    print("REFRESH_TOKEN:", YAHOO_REFRESH_TOKEN)
-    print("LEAGUE_KEY:", YAHOO_LEAGUE_KEY)
     """Get a new access token from Yahoo using the refresh token."""
     url = "https://api.login.yahoo.com/oauth2/get_token"
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -36,20 +30,8 @@ def refresh_access_token():
         "client_id": YAHOO_CLIENT_ID,
         "client_secret": YAHOO_CLIENT_SECRET,
     }
-
-    print("===== YAHOO TOKEN REFRESH REQUEST =====")
-    print("URL:", url)
-    print("Headers:", headers)
-    print("Data:", data)
  
     r = httpx.post(url, data=data, headers=headers)
-
-    print("===== YAHOO TOKEN REFRESH RESPONSE =====")
-    print("Status Code:", r.status_code)
-    try:
-        print("Response JSON:", r.json())
-    except Exception:
-        print("Response Text:", r.text)
     r.raise_for_status()
     token_data = r.json()
     access_token = token_data["access_token"]
