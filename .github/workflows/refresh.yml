@@ -1,9 +1,25 @@
-name: Weekly Refresh
+name: Scheduled Jobs
+
 on:
   schedule:
-    - cron: '0 8 * * 1'  # 4AM EST = 8AM UTC
+    # Every Tuesday at 4:00 AM EST (8:00 UTC)
+    - cron: "0 8 * * 2"
+    # Every 15 minutes
+    - cron: "*/15 * * * *"
+
 jobs:
-  call-backend:
+  refresh:
+    if: github.event.schedule == '0 8 * * 2'
     runs-on: ubuntu-latest
     steps:
-      - run: curl -X POST https://your-render-service.onrender.com/refresh
+      - name: Call refresh endpoint
+        run: |
+          curl -s -X POST "https://vercel.com/stevensosnicks-projects/fantasy-power-rankings/refresh"
+
+  keep_warm:
+    if: github.event.schedule == '*/15 * * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call main site
+        run: |
+          curl -s -X GET "https://vercel.com/stevensosnicks-projects/fantasy-power-rankings"
