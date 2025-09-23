@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Call refresh endpoint
         run: |
-          curl -s -X POST "https://vercel.com/stevensosnicks-projects/fantasy-power-rankings/refresh"
+          curl -s -X POST "https://fantasy-power-rankings-backend.onrender.com/refresh"
 
   keep_warm:
     if: github.event.schedule == '*/15 * * * *'
@@ -22,4 +22,4 @@ jobs:
     steps:
       - name: Call main site
         run: |
-          curl -s -X GET "https://vercel.com/stevensosnicks-projects/fantasy-power-rankings"
+          curl -s -X GET "https://fantasy-power-rankings-backend.onrender.com/power-rankings"
