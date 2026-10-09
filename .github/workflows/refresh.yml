@@ -1,25 +1,52 @@
-name: Scheduled Jobs
+name: Refresh rankings and website cache
 
 on:
   schedule:
-    # Every Tuesday at 4:00 AM EST (8:00 UTC)
+    # Tuesday at 08:00 UTC: 4 AM EDT / 3 AM EST.
     - cron: "0 8 * * 2"
-    # Every 15 minutes
-    - cron: "*/15 * * * *"
+    # Daily cache refresh only; never imports an additional week.
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rankings-and-cache-refresh
+  cancel-in-progress: false
+
+env:
+  BACKEND_URL: https://fantasy-power-rankings-backend.onrender.com
+  FRONTEND_URL: ${{ vars.FRONTEND_URL }}
 
 jobs:
   refresh:
-    if: github.event.schedule == '0 8 * * 2'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Call refresh endpoint
+      - name: Validate cache configuration
         run: |
-          curl -s -X POST "https://fantasy-power-rankings-backend.onrender.com/refresh"
+          test -n "$FRONTEND_URL" || { echo 'Set the FRONTEND_URL repository variable'; exit 1; }
+          case "$FRONTEND_URL" in
+            https://*) ;;
+            *) echo 'FRONTEND_URL must use HTTPS'; exit 1 ;;
+          esac
 
-  keep_warm:
-    if: github.event.schedule == '*/15 * * * *'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Call main site
+      - name: Wake the backend before refreshing
         run: |
-          curl -s -X GET "https://fantasy-power-rankings-backend.onrender.com/power-rankings"
+          curl --fail-with-body --silent --show-error --max-time 180 \
+            --retry 3 --retry-delay 10 "$BACKEND_URL/" > /dev/null
+
+      - name: Import the next week on Tuesday only
+        if: github.event_name == 'schedule' && github.event.schedule == '0 8 * * 2'
+        run: |
+          # Do not retry this POST: it advances to the next week on each call.
+          curl --fail-with-body --silent --show-error --max-time 180 \
+            -X POST "$BACKEND_URL/refresh" -o refresh-result.json
+          jq -e '.teams > 0 and (.season_stats | type == "array" and length > 0)' refresh-result.json
+
+      - name: Invalidate and warm the frontend data cache
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 180 \
+            --retry 3 --retry-delay 10 \
+            -X POST "${FRONTEND_URL%/}/api/revalidate"

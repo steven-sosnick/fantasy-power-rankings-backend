@@ -58,7 +58,31 @@ leaders are all included. These additions require no schema changes.
 The 2026 league IDs and team records are deployment data, not included here.
 The migration and setup steps must be applied to Supabase separately.
 
-## Local development
+## Weekly website caching
+
+Frontend API responses are cached for seven days with the `league-data` tag.
+The public frontend `POST /api/revalidate` invalidates that tag and fetches
+the season list, rankings, and history for each year to populate the cache.
+First visits without cached data can still wait for the backend.
+
+Configure before enabling the updated workflow:
+
+1. Deploy the frontend containing `/api/revalidate`. No secret is required.
+2. In this backend repository's GitHub Actions settings, add repository
+   variable `FRONTEND_URL` with the production HTTPS frontend origin (no path).
+3. Push the workflow to the default branch.
+4. Run **Refresh rankings and website cache** manually in GitHub Actions once
+   to populate the cache. Manual runs refresh the cache only.
+
+Tuesday 08:00 UTC imports the next week, then refreshes the cache after a
+successful import. Daily 09:17 UTC runs only refresh the cache. Both wake the
+backend first. The stats import is never automatically retried, since each
+call advances a week. An HTTP or application error fails the workflow.
+Schedules use UTC (Tuesday import is 4 AM EDT / 3 AM EST), and GitHub may delay
+scheduled runs. If a Tuesday import fails, inspect the stored weeks before
+calling `/refresh` again; a manual workflow run will not retry the import.
+
+## Local development commands
 
 Configure `.env` with `SUPABASE_URL`, `SUPABASE_KEY`, `YAHOO_CLIENT_ID`,
 `YAHOO_CLIENT_SECRET`, and `YAHOO_REFRESH_TOKEN`.
