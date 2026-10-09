@@ -1,6 +1,7 @@
 # app/rankings.py
 from typing import List, Dict, Tuple
 from datetime import datetime
+from statistics import mean, pstdev
 from app.db import supabase
 
 
@@ -113,6 +114,67 @@ def calculate_power_rankings(all_weekly_rows: List[dict], teams_rows: List[dict]
     # Sort final output by total desc (so it's ready for display)
     season_rows.sort(key=lambda r: r["total"], reverse=True)
     return season_rows
+
+
+def calculate_season_insights(weekly_rows: List[dict], teams_rows: List[dict]) -> dict:
+    """Descriptive scoring stats and wins relative to a random league opponent."""
+    teams = {t["id"]: t["name"] for t in teams_rows}
+    by_week = {}
+    for row in weekly_rows:
+        if row["team_id"] in teams:
+            week = int(row["week"])
+            entries = by_week.setdefault(week, {})
+            if row["team_id"] in entries:
+                raise ValueError("Duplicate weekly stats for a team")
+            entries[row["team_id"]] = row
+    # Only compare opponents in weeks with the entire season roster present.
+    complete = {w: rows for w, rows in by_week.items() if len(rows) == len(teams) and len(teams) > 1}
+    weekly_highs = []
+    for week, rows in sorted(complete.items()):
+        high = max(float(r["points_for"]) for r in rows.values())
+        weekly_highs.append({"week": week, "points": high, "teams": [
+            {"team_id": tid, "team_name": teams[tid]}
+            for tid, r in rows.items() if float(r["points_for"]) == high
+        ]})
+    stats = []
+    for tid, name in teams.items():
+        scores = [float(rows[tid]["points_for"]) for rows in by_week.values() if tid in rows]
+        if not scores:
+            continue
+        expected = sum(
+            sum(float(r["points_for"]) < float(rows[tid]["points_for"])
+                for opponent, r in rows.items() if opponent != tid) / (len(teams) - 1)
+            for rows in complete.values()
+        )
+        actual = sum(int(rows[tid].get("wins", 0)) for rows in complete.values())
+        stats.append({"team_id": tid, "team_name": name, "weeks_played": len(scores),
+                      "average_points": round(mean(scores), 2), "best_score": max(scores),
+                      "worst_score": min(scores),
+                      "score_stddev": round(pstdev(scores), 2) if len(scores) > 1 else None,
+                      "luck_weeks": len(complete), "actual_wins": actual,
+                      "expected_wins": round(expected, 2) if complete else None,
+                      "luck": round(actual - expected, 2) if complete else None})
+    return {"teams": stats, "weekly_highs": weekly_highs}
+
+
+def calculate_power_history(weekly_rows: List[dict], teams_rows: List[dict]) -> List[dict]:
+    """Rebuild cumulative snapshots; weekly_stats.total is not a power score."""
+    names = {t["id"]: t["name"] for t in teams_rows}
+    history = []
+    for week in sorted({int(r["week"]) for r in weekly_rows}):
+        rows = calculate_power_rankings(
+            [r for r in weekly_rows if int(r["week"]) <= week], teams_rows
+        )
+        previous_total = None
+        rank = 0
+        for position, row in enumerate(rows, 1):
+            if row["total"] != previous_total:
+                rank = position
+            previous_total = row["total"]
+            row.pop("updated_at", None)
+            row.update(rank=rank, team_name=names.get(row["team_id"], "Unknown team"))
+        history.append({"week": week, "rankings": rows})
+    return history
 
 
 def recalc_and_store_season(season_id: int, max_points: int | None = None) -> List[dict]:

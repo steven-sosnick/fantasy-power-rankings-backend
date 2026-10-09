@@ -1,7 +1,28 @@
 from fastapi import APIRouter, HTTPException, Query
 from app.db import supabase
+from app.rankings import calculate_power_history, calculate_season_insights
 
 router = APIRouter()
+
+
+@router.get("/power-rankings/history")
+def get_power_history(year: int = Query(..., description="Season year")):
+    seasons = supabase.table("seasons").select("*").eq("year", year).execute().data
+    if not seasons:
+        raise HTTPException(status_code=404, detail="Season not found")
+    season = seasons[0]
+    teams = supabase.table("teams").select("*").eq("season_id", season["id"]).execute().data or []
+    weekly = []
+    # Supabase caps responses; fetch all rows in a stable order.
+    while True:
+        page = (supabase.table("weekly_stats").select("*")
+                .eq("season_id", season["id"]).order("id")
+                .range(len(weekly), len(weekly) + 999).execute().data or [])
+        weekly.extend(page)
+        if len(page) < 1000:
+            break
+    return {"season": season, "weeks": calculate_power_history(weekly, teams),
+            "insights": calculate_season_insights(weekly, teams)}
 
 @router.get("/seasons")
 def get_seasons():

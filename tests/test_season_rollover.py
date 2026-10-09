@@ -102,6 +102,73 @@ def test_category_ties_still_split_rank_points(routes):
     assert result[0]["total"] == result[1]["total"] == 28.5
 
 
+def test_history_is_cumulative_and_ignores_raw_weekly_total(routes):
+    module = importlib.import_module("app.rankings")
+    teams = [{"id": i, "name": str(i), "season_id": 4} for i in (1, 2)]
+    rows = [
+        {"team_id": 1, "week": 1, "wins": 1, "points_for": 150, "h2h_wins": 1, "total": 150},
+        {"team_id": 2, "week": 1, "wins": 0, "points_for": 50, "h2h_wins": 0, "total": 50},
+        {"team_id": 1, "week": 2, "wins": 0, "points_for": 50, "h2h_wins": 0},
+        {"team_id": 2, "week": 2, "wins": 1, "points_for": 100, "h2h_wins": 1},
+    ]
+    history = module.calculate_power_history(rows, teams)
+    assert [w["week"] for w in history] == [1, 2]
+    assert history[0]["rankings"][0]["total"] == 6
+    assert history[1]["rankings"][0]["team_id"] == 1
+    assert history[1]["rankings"][0]["points_for"] == 200
+    assert history[1]["rankings"][0]["total"] == 5
+    assert "updated_at" not in history[0]["rankings"][0]
+    assert module.calculate_power_history([], teams) == []
+
+
+def test_history_preserves_missing_weeks_and_shared_ranks(routes):
+    module = importlib.import_module("app.rankings")
+    teams = [{"id": i, "name": str(i), "season_id": 4} for i in (1, 2, 3)]
+    rows = [{"team_id": i, "week": w, "wins": 1 if i < 3 else 0,
+             "points_for": 100 if i < 3 else 50, "h2h_wins": 1 if i < 3 else 0}
+            for i in (1, 2, 3) for w in (1, 3)]
+    history = module.calculate_power_history(rows, teams)
+    assert [w["week"] for w in history] == [1, 3]
+    assert [r["rank"] for r in history[-1]["rankings"]] == [1, 1, 3]
+    assert [r["total"] for r in history[-1]["rankings"]] == [7.5, 7.5, 3]
+
+
+def test_insights_scoring_ties_luck_and_missing_teams(routes):
+    module = importlib.import_module("app.rankings")
+    teams = [{"id": i, "name": str(i), "season_id": 4} for i in (1, 2, 3)]
+    rows = [
+        {"team_id": 1, "week": 1, "points_for": 100, "wins": 1},
+        {"team_id": 2, "week": 1, "points_for": 100, "wins": 0},
+        {"team_id": 3, "week": 1, "points_for": 50, "wins": 0},
+        {"team_id": 1, "week": 2, "points_for": 120, "wins": 1},
+    ]
+    result = module.calculate_season_insights(rows, teams)
+    one, two, three = result["teams"]
+    assert (one["average_points"], one["score_stddev"], one["best_score"], one["worst_score"]) == (110, 10, 120, 100)
+    assert one["expected_wins"] == .5
+    assert one["luck"] == .5
+    assert one["actual_wins"] == 1  # incomplete week excluded from both sides
+    assert one["luck_weeks"] == 1
+    assert two["luck"] == -.5
+    assert two["score_stddev"] is None
+    assert three["expected_wins"] == 0
+    assert len(result["weekly_highs"]) == 1
+    assert [t["team_id"] for t in result["weekly_highs"][0]["teams"]] == [1, 2]
+    assert module.calculate_season_insights([], teams) == {"teams": [], "weekly_highs": []}
+
+
+def test_insights_no_opponents_and_duplicate_rows(routes):
+    module = importlib.import_module("app.rankings")
+    teams = [{"id": 1, "name": "A", "season_id": 4}]
+    rows = [{"team_id": 1, "week": 1, "points_for": 0, "wins": 0}]
+    result = module.calculate_season_insights(rows, teams)
+    assert result["teams"][0]["luck"] is None
+    assert result["teams"][0]["expected_wins"] is None
+    assert result["weekly_highs"] == []
+    with pytest.raises(ValueError, match="Duplicate"):
+        module.calculate_season_insights(rows * 2, teams)
+
+
 def test_unmapped_yahoo_team_does_not_insert_stats(routes, monkeypatch):
     route, db = routes
     setup_db(db)
