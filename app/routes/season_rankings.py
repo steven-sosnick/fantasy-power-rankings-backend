@@ -3,6 +3,11 @@ from app.db import supabase
 
 router = APIRouter()
 
+@router.get("/seasons")
+def get_seasons():
+    result = supabase.table("seasons").select("year").order("year", desc=True).execute()
+    return {"years": sorted({row["year"] for row in result.data or []}, reverse=True)}
+
 @router.get("/power-rankings")
 def get_power_rankings(year: int = Query(None, description="Season year")):
     # 1️⃣ Get the season
@@ -36,10 +41,7 @@ def get_power_rankings(year: int = Query(None, description="Season year")):
         .execute()
     )
 
-    if not season_stats_res.data:
-        raise HTTPException(status_code=404, detail="No season stats found for this season")
-
-    season_stats = season_stats_res.data
+    season_stats = season_stats_res.data or []
 
     # 3️⃣ Calculate power rankings (sorted by total desc)
     stats_sorted = sorted(season_stats, key=lambda x: x["total"], reverse=True)

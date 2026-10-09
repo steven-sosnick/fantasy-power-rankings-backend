@@ -1,23 +1,16 @@
 # app/yahoo.py
 import httpx
-
-from datetime import datetime
-
-
-import os
-import httpx
-from dotenv import load_dotenv
-import json
 import requests
-import os
+from app.config import YAHOO_CLIENT_ID, YAHOO_CLIENT_SECRET, YAHOO_REFRESH_TOKEN
 
-load_dotenv()  # <- This loads variables from .env into os.environ
 
-YAHOO_CLIENT_ID = os.getenv("YAHOO_CLIENT_ID")
-YAHOO_CLIENT_SECRET = os.getenv("YAHOO_CLIENT_SECRET")
-YAHOO_REFRESH_TOKEN = os.getenv("YAHOO_REFRESH_TOKEN")
-YAHOO_LEAGUE_KEY = f"nfl.l.{os.getenv('YAHOO_LEAGUE_ID')}"
-# Debug: confirm they are loaded
+def get_league_key(game_key: str, league_id: str) -> str:
+    """Use an explicit season game key, never Yahoo's current-season alias."""
+    game_key = str(game_key).strip() if game_key is not None else ""
+    league_id = str(league_id).strip() if league_id is not None else ""
+    if not game_key.isdecimal() or not league_id.isdecimal():
+        raise ValueError("Season game_key and league_id must be numeric Yahoo IDs")
+    return f"{game_key}.l.{league_id}"
 
 
 def refresh_access_token():
@@ -53,8 +46,9 @@ def get_access_token():
     return r.json()["access_token"]
 
 
-def get_teams(access_token):
-    url = f"https://fantasysports.yahooapis.com/fantasy/v2/league/{YAHOO_LEAGUE_KEY}/teams?format=json"
+def get_teams(access_token, game_key: str, league_id: str):
+    league_key = get_league_key(game_key, league_id)
+    url = f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/teams?format=json"
     headers = {"Authorization": f"Bearer {access_token}"}
     r = httpx.get(url, headers=headers)
     r.raise_for_status()
@@ -85,13 +79,13 @@ def get_teams(access_token):
 
 
 
-def get_weekly_data(league_id: str, week: int):
+def get_weekly_data(game_key: str, league_id: str, week: int):
     """
     Fetch weekly stats for a league + week from Yahoo API,
     and parse them into DB-ready rows.
     """
+    league_key = get_league_key(game_key, league_id)
     access_token = refresh_access_token()
-    league_key = "461.l.49894"
     url = f"https://fantasysports.yahooapis.com/fantasy/v2/league/{league_key}/scoreboard;week={week}?format=json"
 
     headers = {"Authorization": f"Bearer {access_token}"}
@@ -174,7 +168,6 @@ def get_weekly_data(league_id: str, week: int):
 
     print("Yahoo weekly data:", {"teams": list(teams_stats.values())})
     return {"teams": list(teams_stats.values())}
-
 
 
 
